@@ -1,0 +1,19 @@
+artifacts = ["/app/drafts/service"]
+
+[task]
+name = "draft-fixed-map/@TASK_ID@"
+description = "Preserve omitted fields in the installed draft service."
+
+[environment]
+network_mode = "no-network"
+workdir = "/app/drafts"
+
+[agent]
+timeout_sec = 120
+
+[verifier]
+environment_mode = "separate"
+timeout_sec = 90
+
+[verifier.environment]
+network_mode = "no-network"

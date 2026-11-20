@@ -1,0 +1,56 @@
+name: Calibration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calibration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture:
+    name: Fixture qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - name: Generate and qualify the fixture
+        run: |
+          python3 -m unittest discover -s scripts
+          python3 scripts/materialize.py
+          python3 scripts/check_calibration.py > .harbor/local-controls.json
+
+  native:
+    name: Native controls (${{ matrix.agent }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: [oracle, nop]
+    env:
+      HARBOR_CONTROL_AGENT: ${{ matrix.agent }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: 0.11.26
+          enable-cache: false
+      - name: Install locked Harbor dependencies
+        run: uv sync --locked --python 3.12
+      - name: Run and verify native Harbor controls
+        run: |
+          python3 scripts/materialize.py
+          uv run --locked harbor run -p .harbor/fixed-map/tasks -a "$HARBOR_CONTROL_AGENT" -e docker -n 4 -r 0 --jobs-dir .harbor/jobs --job-name "$HARBOR_CONTROL_AGENT"
+          python3 scripts/check_native.py .harbor/fixed-map/assignments.json ".harbor/jobs/$HARBOR_CONTROL_AGENT" "$HARBOR_CONTROL_AGENT"
